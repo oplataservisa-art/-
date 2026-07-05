@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Правовые новости (фикстура Atom)</title>
+  <entry>
+    <title>Ростехнадзор обновил порядок аттестации по промышленной безопасности</title>
+    <link rel="alternate" href="https://example.legal.ru/atom/21"/>
+    <published>2026-06-28T08:00:00Z</published>
+    <summary>Изменения касаются работников опасных производственных объектов (ОПО).</summary>
+  </entry>
+</feed>

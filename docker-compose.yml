@@ -1,0 +1,108 @@
+# Docker Compose — Этап 1.
+# Сетевая схема по разделу 8 ТЗ:
+#   - наружу открыт только Nginx (frontend), порт из APP_PORT;
+#   - backend доступен только Nginx'у по внутренней сети;
+#   - PostgreSQL доступен только backend'у, порт наружу НЕ публикуется.
+# Все секреты — в .env (см. .env.example). Файл .env в git не коммитится.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-effecom}
+      POSTGRES_USER: ${POSTGRES_USER:-effecom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Задайте POSTGRES_PASSWORD в .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    # Портов наружу нет — база недоступна из интернета (14.4.1)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-effecom} -d ${POSTGRES_DB:-effecom}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-effecom}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-effecom}
+      SECRET_KEY: ${SECRET_KEY:?Задайте SECRET_KEY в .env}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-60}
+      SESSION_MAX_HOURS: ${SESSION_MAX_HOURS:-12}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@effecom.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Задайте ADMIN_PASSWORD в .env}
+      ADMIN_NAME: ${ADMIN_NAME:-Администратор}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      AI_PROVIDER: ${AI_PROVIDER:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-120}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-4000}
+      AI_DAILY_BUDGET_USD: ${AI_DAILY_BUDGET_USD:-5}
+      AI_MONTHLY_BUDGET_USD: ${AI_MONTHLY_BUDGET_USD:-50}
+      AI_PRICE_INPUT_PER_1M: ${AI_PRICE_INPUT_PER_1M:-0}
+      AI_PRICE_OUTPUT_PER_1M: ${AI_PRICE_OUTPUT_PER_1M:-0}
+      MONITOR_ENABLED: ${MONITOR_ENABLED:-false}
+      MONITOR_TICK_SECONDS: ${MONITOR_TICK_SECONDS:-300}
+      MONITOR_HTTP_TIMEOUT: ${MONITOR_HTTP_TIMEOUT:-20}
+      MONITOR_MAX_ITEMS_PER_RUN: ${MONITOR_MAX_ITEMS_PER_RUN:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+      - web
+    # Портов наружу нет — API доступен только через reverse proxy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  worker:
+    build:
+      context: ./backend
+    image: effecom-backend
+    command: python -m app.monitor
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-effecom}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-effecom}
+      MONITOR_ENABLED: ${MONITOR_ENABLED:-false}
+      MONITOR_TICK_SECONDS: ${MONITOR_TICK_SECONDS:-300}
+      MONITOR_HTTP_TIMEOUT: ${MONITOR_HTTP_TIMEOUT:-20}
+      MONITOR_MAX_ITEMS_PER_RUN: ${MONITOR_MAX_ITEMS_PER_RUN:-30}
+    networks:
+      - internal   # доступ к базе
+      - web        # исходящий интернет для RSS/HTML; ports наружу НЕ публикуются
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${APP_PORT:-80}:80"
+    networks:
+      - web
+
+networks:
+  internal:
+    # Внутренняя сеть БД и backend, без выхода наружу
+    internal: true
+  web:
+
+volumes:
+  pgdata:
