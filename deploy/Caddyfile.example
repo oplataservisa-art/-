@@ -1,0 +1,22 @@
+# Caddy как TLS-терминатор ПЕРЕД приложением (вариант из README «Production»).
+# Домен НЕ зашит — берётся из переменной окружения DOMAIN (см. .env).
+# Caddy сам получает и продлевает сертификат Let's Encrypt и добавляет HSTS.
+#
+# Приложение (сервис frontend из docker-compose) остаётся за прокси и наружу
+# не публикует 80/443 — их слушает только Caddy. То есть в production у сервиса
+# frontend порт из compose (APP_PORT) публикуется НЕ наружу, а только для Caddy,
+# либо оба контейнера ставятся в одну docker-сеть и Caddy проксирует по имени.
+#
+# Запуск (пример): DOMAIN=content.effecom.ru caddy run --config deploy/Caddyfile.example
+
+{$DOMAIN} {
+	encode gzip
+
+	# HSTS ставится здесь, на TLS-терминаторе (в внутреннем nginx он не нужен).
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# frontend:80 — имя сервиса из docker-compose, если Caddy в той же сети.
+	# Если Caddy на хосте, а приложение слушает APP_PORT на localhost:
+	#   reverse_proxy 127.0.0.1:{$APP_PORT:80}
+	reverse_proxy frontend:80
+}

@@ -5,10 +5,19 @@
 #   - PostgreSQL доступен только backend'у, порт наружу НЕ публикуется.
 # Все секреты — в .env (см. .env.example). Файл .env в git не коммитится.
 
+# Ротация логов контейнеров: без лимита json-file растёт бесконечно и со
+# временем забивает диск сервера. Применяется ко всем сервисам ниже якорем.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-effecom}
       POSTGRES_USER: ${POSTGRES_USER:-effecom}
@@ -31,6 +40,7 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
+    logging: *default-logging
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-effecom}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-effecom}
       SECRET_KEY: ${SECRET_KEY:?Задайте SECRET_KEY в .env}
@@ -73,6 +83,7 @@ services:
     image: effecom-backend
     command: python -m app.monitor
     restart: unless-stopped
+    logging: *default-logging
     # Воркер не слушает порт 8000, поэтому HEALTHCHECK образа backend
     # к нему неприменим — отключаем только здесь (backend/frontend/db не трогаем)
     healthcheck:
@@ -86,6 +97,10 @@ services:
       MONITOR_TICK_SECONDS: ${MONITOR_TICK_SECONDS:-300}
       MONITOR_HTTP_TIMEOUT: ${MONITOR_HTTP_TIMEOUT:-20}
       MONITOR_MAX_ITEMS_PER_RUN: ${MONITOR_MAX_ITEMS_PER_RUN:-30}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     networks:
       - internal   # доступ к базе
       - web        # исходящий интернет для RSS/HTML; ports наружу НЕ публикуются
@@ -95,12 +110,17 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       - backend
     ports:
       - "${APP_PORT:-80}:80"
     networks:
       - web
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 networks:
   internal:
