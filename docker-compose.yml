@@ -73,6 +73,10 @@ services:
     image: effecom-backend
     command: python -m app.monitor
     restart: unless-stopped
+    # Воркер не слушает порт 8000, поэтому HEALTHCHECK образа backend
+    # к нему неприменим — отключаем только здесь (backend/frontend/db не трогаем)
+    healthcheck:
+      disable: true
     depends_on:
       db:
         condition: service_healthy

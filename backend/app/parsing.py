@@ -177,11 +177,75 @@ def fetch_url(url: str) -> str:
             break                       # берём первые N КБ — список новостей в начале
     resp.close()
     body = b"".join(chunks)
-    encoding = resp.encoding or "utf-8"
-    try:
-        return body.decode(encoding, errors="replace")
-    except LookupError:
-        return body.decode("utf-8", errors="replace")
+    return decode_body(body, resp.headers.get("Content-Type"))
+
+
+# ------------------------------------------------------------- кодировка
+# Российские ленты (consultant.ru, garant.ru) часто отдаются в windows-1251,
+# при этом charset не всегда указан в HTTP-заголовке. Каскад определения:
+# Content-Type → XML-пролог → HTML meta → utf-8 → windows-1251.
+CHARSET_IN_HEADER = re.compile(r'charset=["\']?([\w\-]+)', re.I)
+CHARSET_IN_XML = re.compile(r'<\?xml[^>]*?encoding=["\']([\w\-]+)', re.I)
+CHARSET_IN_META = re.compile(
+    r'<meta[^>]+?charset=["\']?([\w\-]+)', re.I)
+
+
+def detect_charsets(content_type: str | None, body: bytes) -> list[str]:
+    """Кандидаты кодировок в порядке доверия (без дублей)."""
+    candidates: list[str] = []
+    if content_type:
+        m = CHARSET_IN_HEADER.search(content_type)
+        if m:
+            candidates.append(m.group(1))
+    # пролог/мета объявлены ASCII-символами — читаем их без знания кодировки
+    head = body[:2048].decode("ascii", errors="ignore")
+    m = CHARSET_IN_XML.search(head)
+    if m:
+        candidates.append(m.group(1))
+    m = CHARSET_IN_META.search(head)
+    if m:
+        candidates.append(m.group(1))
+    candidates += ["utf-8", "windows-1251"]
+    seen: set[str] = set()
+    result = []
+    for c in candidates:
+        c = c.strip().lower()
+        if c and c not in seen:
+            seen.add(c)
+            result.append(c)
+    return result
+
+
+def looks_readable(text: str) -> bool:
+    """«Битый русский текст» по требованию правки: среди не-ASCII символов
+    должна преобладать кириллица (или типографика «»—…№). Чистый ASCII — ок.
+    Ловит случай лживого charset в заголовке (например iso-8859-1 поверх
+    windows-1251): такой decode «успешен», но читаемым не является."""
+    sample = text[:6000]
+    if "\ufffd" in sample:
+        return False
+    non_ascii = [ch for ch in sample if ord(ch) > 127]
+    if not non_ascii:
+        return True
+    cyrillic = sum(1 for ch in non_ascii
+                   if "\u0400" <= ch <= "\u04ff" or ch in "«»—–…№·")
+    return cyrillic / len(non_ascii) >= 0.5
+
+
+def decode_body(body: bytes, content_type: str | None) -> str:
+    """Декодирование с двойной проверкой каждого кандидата: строгий decode
+    (битые для кодировки байты → следующий кандидат) плюс looks_readable
+    (декодировалось, но по-русски нечитаемо → следующий кандидат).
+    utf-8 стоит раньше windows-1251: байты 1251 невалидны для utf-8 и
+    честно уводят каскад к правильному варианту."""
+    for encoding in detect_charsets(content_type, body):
+        try:
+            text = body.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        if looks_readable(text):
+            return text
+    return body.decode("windows-1251", errors="replace")   # крайний случай
 
 
 # ------------------------------------------------------------------ RSS/Atom

@@ -12,8 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.parsing import (content_hash, parse_html_list, parse_rss,  # noqa: E402
-                         parse_source, relevance_score)
+from app.parsing import (content_hash, decode_body, parse_html_list,  # noqa: E402
+                         parse_rss, parse_source, relevance_score)
 
 FIX = Path(__file__).resolve().parent / "fixtures"
 failed = []
@@ -69,6 +69,21 @@ check("parse_source: HTML распознан как список", len(auto2) ==
 # ------------------------------------------------------------ релевантность
 check("relevance: заголовок весит больше выдержки",
       relevance_score("Обучение по охране труда", "") > relevance_score("Новость", "обучение по охране труда"))
+
+# ------------------------------------------------------- кодировки (4b-fix)
+rus_xml = '<?xml version="1.0" encoding="windows-1251"?><rss><channel><item><title>Охрана труда: новые правила обучения</title><link>https://e.ru/1</link></item></channel></rss>'
+cp1251 = rus_xml.encode("windows-1251")
+t = decode_body(cp1251, "text/xml")  # charset в заголовке НЕ указан
+check("Кодировка: windows-1251 по XML-прологу без charset в заголовке",
+      "Охрана труда" in t)
+t = decode_body(cp1251, "text/xml; charset=iso-8859-1")  # заголовок ЛЖЁТ
+check("Кодировка: лживый charset=iso-8859-1 отбит проверкой читаемости",
+      "Охрана труда" in t)
+t = decode_body("<rss><channel><item><title>Пожарная безопасность</title></item></channel></rss>".encode("utf-8"), None)
+check("Кодировка: utf-8 без заголовка и пролога", "Пожарная" in t)
+html_1251 = '<html><head><meta charset="windows-1251"></head><body>Инструктаж по охране труда</body></html>'.encode("windows-1251")
+t = decode_body(html_1251, "text/html")
+check("Кодировка: HTML meta charset=windows-1251", "Инструктаж" in t)
 
 print()
 if failed:
