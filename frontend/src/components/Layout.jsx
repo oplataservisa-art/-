@@ -12,6 +12,7 @@ const NAV = [
   { to: '/topics', label: 'Темы', roles: ['admin', 'editor', 'expert', 'manager'] },
   { to: '/articles', label: 'Статьи', roles: ['admin', 'editor', 'expert', 'content_manager', 'manager'] },
   { to: '/calendar', label: 'Календарь', roles: ['admin', 'editor', 'expert', 'content_manager', 'manager'] },
+  { to: '/channels', label: 'Каналы', roles: ['admin', 'content_manager', 'manager'] },
   { to: '/knowledge', label: 'База знаний', roles: ['admin', 'editor', 'expert', 'content_manager'] },
   { to: '/prompts', label: 'Промпты', roles: ['admin', 'editor'] },
   { to: '/users', label: 'Пользователи', roles: ['admin'] },

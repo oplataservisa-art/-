@@ -82,3 +82,29 @@ export async function api(path, { method = 'GET', body } = {}) {
   }
   return data;
 }
+
+/* Скачивание файла экспорта (MD/HTML). Идёт через fetch с токеном (авторизация
+   в заголовке, а не в cookie), затем отдаёт браузеру Blob на сохранение. */
+export async function downloadFile(path, fallbackName = 'export.txt') {
+  await maybeRefresh();
+  const token = getToken();
+  const res = await fetch(path, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (res.status === 401) {
+    clearToken();
+    if (!window.location.pathname.startsWith('/login')) window.location.href = '/login';
+    throw new ApiError(401, 'Сессия истекла');
+  }
+  if (!res.ok) throw new ApiError(res.status, `Ошибка экспорта ${res.status}`);
+
+  const cd = res.headers.get('Content-Disposition') || '';
+  const m = cd.match(/filename="?([^"]+)"?/);
+  const name = m ? m[1] : fallbackName;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}

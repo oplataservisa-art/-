@@ -12,8 +12,7 @@
 ArticleVersion (версии по каналам, 6.8 и 11.7), ArticleChecklistItem
 (чек-лист качества, 6.9), ArticleComment (комментарии эксперта, 11.7),
 поля планирования публикации у Article (календарь, 11.8).
-Сущности этапов 3-5 (парсинг SourceItem, интеграции Publication,
-AnalyticsMetric) сознательно НЕ созданы.
+Сущности этапа 5 (AnalyticsMetric) сознательно НЕ созданы.
 """
 import enum
 from datetime import datetime, timezone
@@ -278,6 +277,39 @@ class ArticleVersion(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     article: Mapped["Article"] = relationship(back_populates="versions")
+
+
+# ------------------------------------------------- Публикации (6.10, §9 ТЗ, Этап 4)
+class PublicationStatus(str, enum.Enum):
+    published = "published"   # факт публикации зафиксирован вручную
+    error = "error"           # ошибка публикации (11.7 статус)
+
+
+class Publication(Base):
+    """Лог публикаций по каналам (6.10, сущность §9 ТЗ).
+
+    MVP: ручная фиксация факта публикации — канал, ссылка, дата, статус.
+    Внешних интеграций и автопубликации нет; строку создаёт контент-менеджер
+    после ручного подтверждения. На Этапе 5 к publication привяжется AnalyticsMetric.
+    """
+    __tablename__ = "publications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    article_id: Mapped[int] = mapped_column(
+        ForeignKey("articles.id", ondelete="CASCADE"), index=True)
+    article_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("article_versions.id", ondelete="SET NULL"), nullable=True)
+    channel: Mapped[VersionChannel] = mapped_column(Enum(VersionChannel))
+    publication_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    status: Mapped[PublicationStatus] = mapped_column(
+        Enum(PublicationStatus), default=PublicationStatus.published)
+    error_log: Mapped[str | None] = mapped_column(Text, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    article: Mapped["Article"] = relationship()
+    version: Mapped["ArticleVersion | None"] = relationship()
 
 
 # ------------------------------------------------- Чек-лист качества (6.9, 11.7)

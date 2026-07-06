@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api } from '../api';
+import { api, downloadFile } from '../api';
 import { Badge, EntityForm, Modal, Tabs } from '../components/ui';
 import AIPanel from '../components/AIPanel';
 import { ARTICLE_STATUS, CHANNELS, fmtDate, fromLocalInput, toLocalInput,
@@ -187,6 +187,7 @@ export function ArticlePage({ user }) {
               onInit={initVersions}
             />
           )}
+          <ExportBar articleId={id} channel={tab === 'article' ? null : tab} user={user} onError={fail} />
         </div>
 
         <div className="side-rail">
@@ -214,6 +215,10 @@ export function ArticlePage({ user }) {
           <PublishPanel user={user} article={article}
             onChanged={(a) => { setArticle(a); flash('Публикация обновлена'); }}
             onError={fail} />
+
+          <ChannelPublishPanel user={user} articleId={id}
+            onError={fail} onNotice={flash}
+            onPublished={() => load()} refresh={sideRefresh} />
 
           <AIPanel articleId={id} visible={canWrite(user)}
             onDone={() => { load(); setSideRefresh((n) => n + 1); }}
@@ -397,6 +402,120 @@ function PublishPanel({ user, article, onChanged, onError }) {
           onClick={() => call('mark-published', {})}>
           Отметить опубликованной вручную
         </button>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------------------- Экспорт и предпросмотр (§4/6.8/6.10) */
+function ExportBar({ articleId, channel, user, onError }) {
+  const [busy, setBusy] = useState('');
+  const [preview, setPreview] = useState(null);
+  const canExport = ['admin', 'editor', 'content_manager'].includes(user.role);
+  const q = channel ? `?channel=${channel}` : '';
+  const exp = async (format) => {
+    setBusy(format);
+    try {
+      await downloadFile(`/api/articles/${articleId}/export?format=${format}`
+        + (channel ? `&channel=${channel}` : ''));
+    } catch (e) { onError(e); } finally { setBusy(''); }
+  };
+  const showPreview = async () => {
+    setBusy('preview');
+    try { setPreview(await api(`/api/articles/${articleId}/preview${q}`)); }
+    catch (e) { onError(e); } finally { setBusy(''); }
+  };
+  return (
+    <div className="export-bar">
+      <span className="muted-text">Экспорт{channel ? ` (${VERSION_CHANNELS[channel]})` : ' (статья)'}:</span>
+      {canExport && <button className="secondary small" disabled={!!busy} onClick={() => exp('md')}>Markdown</button>}
+      {canExport && <button className="secondary small" disabled={!!busy} onClick={() => exp('html')}>HTML</button>}
+      <button className="secondary small" disabled={!!busy} onClick={showPreview}>Предпросмотр</button>
+      {preview && (
+        <Modal title={`Предпросмотр: ${preview.title}`} onClose={() => setPreview(null)}>
+          <div className="preview-html" dangerouslySetInnerHTML={{ __html: preview.html }} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------ Ручная фиксация публикации по каналу (6.10) */
+function ChannelPublishPanel({ user, articleId, onError, onNotice, onPublished, refresh = 0 }) {
+  const [log, setLog] = useState([]);
+  const [channel, setChannel] = useState('site');
+  const [url, setUrl] = useState('');
+  const [status, setStatus] = useState('published');
+  const [errText, setErrText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const canPub = canMarkPublished(user);   // контент-менеджер | администратор
+
+  const load = () => api(`/api/articles/${articleId}/publications`)
+    .then(setLog).catch(() => setLog([]));
+  useEffect(() => { load(); }, [articleId, refresh]);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await api(`/api/articles/${articleId}/publish`, {
+        method: 'POST',
+        body: {
+          channel, publication_url: url || null, status,
+          error_log: status === 'error' ? (errText || null) : null,
+        },
+      });
+      setUrl(''); setErrText('');
+      onNotice('Публикация зафиксирована');
+      await load(); onPublished && onPublished();
+    } catch (e) { onError(e); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="panel">
+      <h2>Публикации по каналам<Hint id="articles.publish" /></h2>
+      {canPub ? (
+        <>
+          <p className="muted-text">
+            Ручная фиксация факта публикации. Автопубликации и интеграций нет —
+            вставьте ссылку на уже опубликованный материал.
+          </p>
+          <label className="field"><span>Канал</span>
+            <select value={channel} onChange={(e) => setChannel(e.target.value)}>
+              {Object.entries(VERSION_CHANNELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select></label>
+          <label className="field"><span>Статус</span>
+            <select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="published">Опубликовано</option>
+              <option value="error">Ошибка публикации</option>
+            </select></label>
+          {status === 'published' ? (
+            <label className="field"><span>Ссылка на материал</span>
+              <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" /></label>
+          ) : (
+            <label className="field"><span>Описание ошибки</span>
+              <input value={errText} onChange={(e) => setErrText(e.target.value)} /></label>
+          )}
+          <button style={{ width: '100%' }} disabled={busy} onClick={submit}>
+            {busy ? 'Сохранение…' : 'Зафиксировать публикацию'}
+          </button>
+        </>
+      ) : (
+        <p className="muted-text">Фиксировать публикацию может контент-менеджер или администратор.</p>
+      )}
+
+      <h3 style={{ marginTop: 12 }}>Лог публикаций</h3>
+      {log.length === 0 ? <p className="muted-text">Пока пусто.</p> : (
+        <ul className="pub-log">
+          {log.map((p) => (
+            <li key={p.id}>
+              <b>{VERSION_CHANNELS[p.channel] || p.channel}</b>
+              {' · '}{p.status === 'error' ? '⚠ ошибка' : 'опубликовано'}
+              {p.publication_url && <> · <a href={p.publication_url} target="_blank" rel="noreferrer">ссылка</a></>}
+              {p.published_at && <> · {fmtDate(p.published_at)}</>}
+              {p.error_log && <div className="muted-text">{p.error_log}</div>}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

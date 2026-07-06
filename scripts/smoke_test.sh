@@ -127,6 +127,73 @@ else
       fail "analyze-group → $AN_CODE"
     fi
 
+    # 6b. Этап 4: публикации, экспорт и каналы
+    CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "$AUTH" "$BASE_URL/api/channels")
+    [ "$CODE" = "200" ] && ok "GET /api/channels (экран каналов)" || fail "GET /api/channels → $CODE"
+
+    CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "$AUTH" \
+      "$BASE_URL/api/articles/999999/export?format=md")
+    [ "$CODE" = "404" ] && ok "export несуществующей статьи → 404" || fail "export → $CODE"
+
+    CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "$AUTH" \
+      "$BASE_URL/api/articles/1/export?format=docx")
+    [ "$CODE" = "422" ] && ok "export DOCX отклонён — только md/html → 422" \
+      || fail "export docx ожидался 422, получен $CODE"
+
+    CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "$AUTH" \
+      "$BASE_URL/api/articles/999999/publications")
+    [ "$CODE" = "404" ] && ok "лог публикаций несуществующей статьи → 404" || fail "publications → $CODE"
+
+    CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" \
+      -H 'Content-Type: application/json' \
+      -d '{"channel":"site","publication_url":"https://example.com"}' \
+      "$BASE_URL/api/articles/999999/publish")
+    [ "$CODE" = "404" ] && ok "publish несуществующей статьи → 404" || fail "publish → $CODE"
+
+    # Реальные проверки на существующей статье (если есть) — без ломкости
+    ARTS=$(curl -s -m 10 -H "$AUTH" "$BASE_URL/api/articles")
+    AID=$(printf '%s' "$ARTS" | grep -o '"id": *[0-9]*' | head -1 | grep -o '[0-9]*')
+    if [ -n "$AID" ]; then
+      AST=$(curl -s -m 10 -H "$AUTH" "$BASE_URL/api/articles/$AID" \
+        | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1)
+
+      CODE=$(curl -s -m 10 -o /tmp/exp.md -w '%{http_code}' -H "$AUTH" \
+        "$BASE_URL/api/articles/$AID/export?format=md")
+      { [ "$CODE" = "200" ] && grep -q '#' /tmp/exp.md; } \
+        && ok "export MD статьи #$AID → 200 + контент" || fail "export MD → $CODE"
+
+      CODE=$(curl -s -m 10 -o /tmp/exp.html -w '%{http_code}' -H "$AUTH" \
+        "$BASE_URL/api/articles/$AID/export?format=html")
+      { [ "$CODE" = "200" ] && grep -qi '<html' /tmp/exp.html; } \
+        && ok "export HTML статьи #$AID → 200" || fail "export HTML → $CODE"
+
+      CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "$AUTH" \
+        "$BASE_URL/api/articles/$AID/publications")
+      [ "$CODE" = "200" ] && ok "GET publications статьи #$AID → 200" || fail "publications → $CODE"
+
+      # publish без ссылки для published → отказ (409 гейт статуса или 422 нет ссылки)
+      CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" \
+        -H 'Content-Type: application/json' -d '{"channel":"site","status":"published"}' \
+        "$BASE_URL/api/articles/$AID/publish")
+      { [ "$CODE" = "409" ] || [ "$CODE" = "422" ]; } \
+        && ok "publish без ссылки → отказ ($CODE), Publication не создан" \
+        || fail "publish без ссылки ожидался 409/422, получен $CODE"
+
+      # успешная фиксация — только если статья уже published (без смены статуса/побочек)
+      if [ "$AST" = "published" ]; then
+        CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST -H "$AUTH" \
+          -H 'Content-Type: application/json' \
+          -d '{"channel":"site","status":"published","publication_url":"https://example.com/smoke"}' \
+          "$BASE_URL/api/articles/$AID/publish")
+        [ "$CODE" = "201" ] && ok "успешная фиксация Publication (статья published) → 201" \
+          || fail "publish (published) → $CODE"
+      else
+        echo "  [skip] успешная фиксация: статья #$AID не в статусе published — пропуск без побочных эффектов"
+      fi
+    else
+      echo "  [skip] реальный export/publications/publish: статей на стенде нет"
+    fi
+
     # 7. Без токена API закрыт
     CODE=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$BASE_URL/api/articles")
     [ "$CODE" = "401" ] && ok "без токена API возвращает 401" \

@@ -369,3 +369,15 @@ tr.clickable:hover td { background: var(--bg); }
 .source-item-row:last-of-type { border-bottom: none; }
 .err-count { color: #b3261e; font-weight: 700; }
 .btn-link { text-decoration: none; display: inline-block; padding: 4px 10px; border: 1px solid #c9d2df; border-radius: 8px; }
+
+/* ---- Этап 4: экспорт, предпросмотр, публикации, каналы ---- */
+.export-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border, #e2e2e2); }
+.preview-html { max-height: 60vh; overflow: auto; padding: 8px 4px; line-height: 1.5; }
+.preview-html h1 { font-size: 1.4rem; }
+.preview-html h2 { font-size: 1.15rem; }
+.preview-html h3 { font-size: 1rem; }
+.pub-log { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.pub-log li { font-size: 0.9rem; }
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px; align-items: start; }

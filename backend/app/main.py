@@ -18,8 +18,9 @@ from .config import settings
 from .database import SessionLocal, engine
 from .migrate import run_migrations
 from .models import Role, User
-from .routers import (ai, articles, auth, calendar, dashboard, info_events,
-                      knowledge, materials, prompts, sources, topics, users)
+from .routers import (ai, articles, auth, calendar, channels, dashboard,
+                      info_events, knowledge, materials, prompts, publications,
+                      sources, topics, users)
 from .security import hash_password
 
 logging.basicConfig(level=logging.INFO,
@@ -130,5 +131,5 @@ def health():
 for router in (auth.router, users.router, sources.router, knowledge.router,
                topics.router, info_events.router, articles.router,
                calendar.router, dashboard.router, ai.router, prompts.router,
-               materials.router):
+               materials.router, publications.router, channels.router):
     app.include_router(router)

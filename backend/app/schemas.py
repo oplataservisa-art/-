@@ -4,8 +4,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from .models import (ArticleStatus, Importance, InfoEventStatus, KnowledgeType,
-                     Role, SourceStatus, SourceType, TopicStatus,
-                     VersionChannel, VersionStatus)
+                     PublicationStatus, Role, SourceStatus, SourceType,
+                     TopicStatus, VersionChannel, VersionStatus)
 
 
 # ------------------------------------------------------------------ auth
@@ -315,6 +315,29 @@ class ScheduleIn(BaseModel):
 
 class MarkPublishedIn(BaseModel):
     published_at: datetime | None = None
+
+
+# --------------------------------------------- Этап 4: лог публикаций (6.10)
+class PublishIn(BaseModel):
+    """Ручная фиксация факта публикации по каналу. Без внешних вызовов."""
+    channel: VersionChannel
+    publication_url: str | None = Field(default=None, max_length=1000)
+    published_at: datetime | None = None
+    status: PublicationStatus = PublicationStatus.published
+    error_log: str | None = Field(default=None, max_length=5000)
+
+
+class PublicationOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    article_id: int
+    article_version_id: int | None
+    channel: VersionChannel
+    publication_url: str | None
+    status: PublicationStatus
+    error_log: str | None
+    published_at: datetime | None
+    created_at: datetime
 
 
 # ------------------------------------------------------------------ audit

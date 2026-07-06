@@ -12,6 +12,7 @@ import Login from './pages/Login';
 import PromptsPage from './pages/Prompts';
 import HelpPage from './pages/Help';
 import MaterialsPage from './pages/Materials';
+import ChannelsPage from './pages/Channels';
 import SourceCardPage from './pages/SourceCard';
 
 export default function App() {
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="/articles" element={<ArticlesPage user={user} />} />
           <Route path="/articles/:id" element={<ArticlePage user={user} />} />
           <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/channels" element={<ChannelsPage />} />
           <Route path="/materials" element={<MaterialsPage user={user} />} />
           <Route path="/sources/:id" element={<SourceCardPage user={user} />} />
           <Route path="/help" element={<HelpPage user={user} />} />
